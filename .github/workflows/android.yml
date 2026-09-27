@@ -1,0 +1,110 @@
+name: Android build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create a GitHub Release on v* tags
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Android SDK 36
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+
+      - name: Unit tests (KB compressor, ad gate, units) + lint
+        run: ./gradlew --no-daemon testDebugUnitTest lintRelease
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: Decode upload keystore
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set – cannot build a signed release"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release AAB + APK
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew --no-daemon bundleRelease assembleRelease
+
+      - name: Verify and collect outputs
+        if: github.event_name != 'pull_request'
+        run: |
+          set -e
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          mkdir -p dist
+          cp app/build/outputs/bundle/release/app-release.aab "dist/photo-resizer-v$VERSION.aab"
+          cp app/build/outputs/apk/release/app-release.apk "dist/photo-resizer-v$VERSION.apk"
+          "$BT/apksigner" verify --verbose --print-certs "dist/photo-resizer-v$VERSION.apk" | grep -E "Verified|Signer #1 certificate (DN|SHA-256)"
+          jarsigner -verify "dist/photo-resizer-v$VERSION.aab" | tail -1
+          "$BT/aapt2" dump badging "dist/photo-resizer-v$VERSION.apk" | grep -E "^package:|targetSdkVersion|^sdkVersion"
+          "$BT/aapt2" dump badging "dist/photo-resizer-v$VERSION.apk" | grep -q "targetSdkVersion:'36'"
+          echo "Permissions:"; "$BT/aapt2" dump permissions "dist/photo-resizer-v$VERSION.apk"
+          if "$BT/aapt2" dump permissions "dist/photo-resizer-v$VERSION.apk" | grep -E "READ_MEDIA_IMAGES|READ_EXTERNAL_STORAGE"; then
+            echo "::error::Media read permission found in merged manifest"; exit 1
+          fi
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          rm -f "$RUNNER_TEMP/upload.jks"
+
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: photo-resizer-aab
+          path: dist/*.aab
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: photo-resizer-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Photo Resizer ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/*.aab
+            dist/*.apk
+            dist/SHA256SUMS.txt
