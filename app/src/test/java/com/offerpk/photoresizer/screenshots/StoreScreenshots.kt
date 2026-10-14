@@ -63,6 +63,14 @@ class StoreScreenshots {
 
     @Test fun s1_home() = shot("01-home") { HomeScreen(onTool = {}, onAbout = {}) }
 
+    @Test
+    @Config(sdk = [36], qualifiers = "w320dp-h640dp-xxhdpi")
+    fun s10_homeCompact() = shot("responsive-320-home") { HomeScreen(onTool = {}, onAbout = {}) }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w600dp-h800dp-xxhdpi")
+    fun s11_homeWide() = shot("responsive-600-home") { HomeScreen(onTool = {}, onAbout = {}) }
+
     @Test fun s2_compress() {
         val vm = vmWith(load("landscape.jpg"))
         shot("02-compress") { CompressScreen(vm, {}, {}, {}) }
