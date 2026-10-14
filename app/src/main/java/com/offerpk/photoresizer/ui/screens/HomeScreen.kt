@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Draw
@@ -82,9 +84,19 @@ fun HomeScreen(onTool: (String) -> Unit, onAbout: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Hero()
-            tools.chunked(2).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { t -> ToolCard(t, Modifier.weight(1f)) { onTool(t.route) } }
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 300.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        tools.forEach { t -> ToolCard(t, Modifier.fillMaxWidth(), compact = true) { onTool(t.route) } }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        tools.chunked(2).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                row.forEach { t -> ToolCard(t, Modifier.weight(1f)) { onTool(t.route) } }
+                            }
+                        }
+                    }
                 }
             }
             HowItWorks()
@@ -117,22 +129,43 @@ private fun Hero() {
 }
 
 @Composable
-private fun ToolCard(t: Tool, modifier: Modifier, onClick: () -> Unit) {
+private fun ToolCard(t: Tool, modifier: Modifier, compact: Boolean = false, onClick: () -> Unit) {
     Card(
-        modifier.height(156.dp).clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick),
+        modifier.height(if (compact) 88.dp else 156.dp).clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Box(Modifier.size(48.dp).clip(CircleShape).background(t.bg), contentAlignment = Alignment.Center) {
-                Icon(t.icon, null, tint = t.tint, modifier = Modifier.size(26.dp))
+        if (compact) {
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ToolIcon(t)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    Text(t.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                }
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
-            Column {
-                Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                Text(t.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+        } else {
+            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                ToolIcon(t)
+                Column {
+                    Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    Text(t.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ToolIcon(t: Tool) {
+    Box(Modifier.size(48.dp).clip(CircleShape).background(t.bg), contentAlignment = Alignment.Center) {
+        Icon(t.icon, null, tint = t.tint, modifier = Modifier.size(26.dp))
     }
 }
 
